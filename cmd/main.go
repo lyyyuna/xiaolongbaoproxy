@@ -15,5 +15,6 @@ func main() {
 	fmt.Println("The proxy is listening on port: ", *port)
 	fmt.Println("Log will be written to: ", *logpath)
 
-	goproxy.StartProxy(*port, *logpath)
+	server := goproxy.StartProxy(*port, *logpath)
+	go server.ListenAndServe()
 }

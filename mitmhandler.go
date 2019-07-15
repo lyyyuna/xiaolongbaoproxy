@@ -1,9 +1,9 @@
 package goproxy
 
 import (
-	"net/http"
 	"github.com/google/logger"
-	)
+	"net/http"
+)
 
 type WrappedHandler struct {
 	logg *logger.Logger

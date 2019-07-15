@@ -1,18 +1,16 @@
 package goproxy
 
 import (
-	"fmt"
+	"github.com/google/logger"
 	"net/http"
 	"os"
-	"github.com/google/logger"
 )
 
-func StartProxy(port string, logpath string) {
+func StartProxy(port string, logpath string) *http.Server{
 
 	lf, err := os.OpenFile(logpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0660)
 	if err != nil {
-		fmt.Println("Fail to open the log file")
-		return
+		panic("Fail to open the log file")
 	}
 	defer lf.Close()
 	logg := logger.Init("LoggerExample", false, true, lf)
@@ -24,6 +22,7 @@ func StartProxy(port string, logpath string) {
 		Handler: handler,
 	}
 	logger.Info("Proxy server starting..")
-	go server.ListenAndServe()
+	// go server.ListenAndServe()
+	return server
 }
 
