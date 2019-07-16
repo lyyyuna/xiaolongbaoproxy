@@ -1,4 +1,4 @@
-package goproxy
+package proxy
 
 import (
 	"github.com/google/logger"

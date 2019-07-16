@@ -1,3 +1,5 @@
 .idea
 a.out
 *.log
+main
+go.sum

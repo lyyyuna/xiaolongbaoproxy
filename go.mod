@@ -1,4 +1,4 @@
-module github.com/lyyyuna/goproxy
+module goproxy
 
 go 1.12
 

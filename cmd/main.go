@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/lyyyuna/goproxy"
+	"goproxy/pkg/proxy"
 )
 
 func main() {
@@ -15,6 +15,6 @@ func main() {
 	fmt.Println("The proxy is listening on port: ", *port)
 	fmt.Println("Log will be written to: ", *logpath)
 
-	server := goproxy.StartProxy(*port, *logpath)
+	server := proxy.StartProxy(*port, *logpath)
 	go server.ListenAndServe()
 }
