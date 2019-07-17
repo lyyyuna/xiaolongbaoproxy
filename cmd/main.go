@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/golang/glog"
 	"goproxy/pkg/proxy"
 	"os"
 	"os/signal"
@@ -12,10 +13,11 @@ import (
 
 func main() {
 	port := flag.String("port", "8080", "Listening port")
-	logpath := flag.String("log", "mitm.log", "Specify where to store the log")
 	profile := flag.String("profile", "", "write cpu profile to file")
 
 	flag.Parse()
+	defer glog.Flush()
+
 	if *profile != "" {
 		f, err := os.Create(*profile)
 		if err != nil {
@@ -34,8 +36,7 @@ func main() {
 	}
 
 	fmt.Println("The proxy is listening on port: ", *port)
-	fmt.Println("Log will be written to: ", *logpath)
 
-	server := proxy.StartProxy(*port, *logpath)
+	server := proxy.StartProxy(*port)
 	server.ListenAndServe()
 }

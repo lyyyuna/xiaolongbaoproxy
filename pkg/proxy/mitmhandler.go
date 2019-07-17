@@ -2,8 +2,7 @@ package proxy
 
 import (
 	"bufio"
-	"fmt"
-	"github.com/google/logger"
+	"github.com/golang/glog"
 	"io"
 	"net"
 	"net/http"
@@ -12,11 +11,15 @@ import (
 	"time"
 )
 
-type WrappedHandler struct {
-	logg *logger.Logger
-}
+type WrappedHandler struct { }
+
+var cnt int64
 
 func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
+
+	// do some statistics
+	handler.statistics()
+
 	if req.Method == "CONNECT" {
 		host := req.Host
 		matched, _ := regexp.MatchString(":[0-9]+$", host)
@@ -25,7 +28,7 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 		}
 		connOut, err := net.DialTimeout("tcp", host, time.Second*30)
 		if err != nil {
-			handler.logg.Error("Dial out to ", host, " failed, the error is ", err)
+			glog.Error("Dial out to ", host, " failed, the error is ", err)
 			res.WriteHeader(502)
 			return
 		}
@@ -34,8 +37,9 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 
 		connIn, _, err := res.(http.Hijacker).Hijack()
 		if err != nil {
-			handler.logg.Error("Hijack http connection failed, the error is ", err)
+			glog.Error("Hijack http connection failed, the error is ", err)
 			res.WriteHeader(502)
+			return
 		}
 		go io.Copy(connOut, connIn)
 		io.Copy(connIn, connOut)
@@ -53,7 +57,7 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 	}
 	connOut, err := net.DialTimeout("tcp", host, time.Second*30)
 	if err != nil {
-		handler.logg.Error("Dial out to ", host, " failed, the error is ", err)
+		glog.Error("Dial out to ", host, " failed, the error is ", err)
 		res.WriteHeader(502)
 		return
 	}
@@ -61,32 +65,38 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 
 	// transfer client's request to remote server
 	if err = req.Write(connOut); err != nil {
-		handler.logg.Error("Fail to connect to remote server, the error is: ", err)
+		glog.Error("Fail to connect to remote server, the error is: ", err)
 		res.WriteHeader(502)
 		return
 	}
 
 	respFromRemote, err := http.ReadResponse(bufio.NewReader(connOut), req)
 	if err != nil && err != io.EOF {
-		handler.logg.Error("Fail to read response from remote server, the error is: ", err)
+		glog.Error("Fail to read response from remote server, the error is: ", err)
 		res.WriteHeader(502)
+		return
 	}
 	defer respFromRemote.Body.Close()
 
 	// writes respFromRemote back to client
 	dump, err := httputil.DumpResponse(respFromRemote, true)
 	if err != nil {
-		handler.logg.Error("Fail to dump the response to bytes buffer, the error is: ", err)
+		glog.Error("Fail to dump the response to bytes buffer, the error is: ", err)
 		res.WriteHeader(502)
+		return
 	}
 	connHj, _, err := res.(http.Hijacker).Hijack()
 	if err != nil {
-		handler.logg.Error("Hijack fail to take over the TCP connection from client's request")
+		glog.Error("Hijack fail to take over the TCP connection from client's request")
+		res.WriteHeader(502)
+		return
 	}
 	defer connHj.Close()
 	_, err = connHj.Write(dump)
 	if err != nil {
-		handler.logg.Error("Fail to send response to clisne, the error is: ", err)
+		glog.Error("Fail to send response to clisne, the error is: ", err)
+		res.WriteHeader(502)
+		return
 	}
 
 	// dump the http response
@@ -94,11 +104,18 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 }
 
 func (handler *WrappedHandler) dumpHTTP(req *http.Request, res *http.Response) {
-	for headerName, headerValue :=  range req.Header {
+	/*for headerName, headerValue :=  range req.Header {
 		fmt.Println(headerName, headerValue)
 	}
 	fmt.Println("===========")
 	for headerName, headerValue := range res.Header {
 		fmt.Println(headerName, headerValue)
+	}*/
+}
+
+func (handler *WrappedHandler) statistics() {
+	cnt++
+	if cnt % 10 == 0 {
+		glog.Info("Has processed requests: ", cnt)
 	}
 }

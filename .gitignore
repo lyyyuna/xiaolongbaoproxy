@@ -4,3 +4,4 @@ a.out
 main
 go.sum
 *.prof
+log
