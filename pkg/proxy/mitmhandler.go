@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"regexp"
+	"strings"
 	"time"
 )
 
-type WrappedHandler struct { }
+type WrappedHandler struct {
+	localIP map[string]int
+}
 
 var cnt int64
 
@@ -19,6 +22,13 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 
 	// do some statistics
 	handler.statistics()
+
+	// check if local
+	if handler.checkIfLocalDest(strings.Split(req.Host, ":")[0]) {
+		glog.Error("The destination is a self, maybe attack")
+		res.WriteHeader(502)
+		return
+	}
 
 	if req.Method == "CONNECT" {
 		host := req.Host
@@ -33,6 +43,12 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 			return
 		}
 		defer connOut.Close()
+		// check if local  by real dns' ip
+		if handler.checkIfLocalDest(strings.Split(connOut.RemoteAddr().String(), ":")[0]) {
+			glog.Error("The destination is a self, maybe attack")
+			res.WriteHeader(502)
+			return
+		}
 		res.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
 		connIn, _, err := res.(http.Hijacker).Hijack()
@@ -62,6 +78,13 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 		return
 	}
 	defer connOut.Close()
+
+	// check if local by real dns' ip
+	if handler.checkIfLocalDest(strings.Split(connOut.RemoteAddr().String(), ":")[0]) {
+		glog.Error("The destination is a self, maybe attack")
+		res.WriteHeader(502)
+		return
+	}
 
 	// transfer client's request to remote server
 	connOut.SetDeadline(time.Now().Add(time.Second * 5))
@@ -120,4 +143,12 @@ func (handler *WrappedHandler) statistics() {
 	if cnt % 10 == 0 {
 		glog.Info("Has processed requests: ", cnt)
 	}
+}
+
+func (handler *WrappedHandler) checkIfLocalDest(dest string) bool {
+	if _, ok := handler.localIP[dest]; ok {
+		return true
+	}
+
+	return false
 }
