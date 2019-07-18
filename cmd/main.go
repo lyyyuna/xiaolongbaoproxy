@@ -14,6 +14,7 @@ import (
 func main() {
 	port := flag.String("port", "8080", "Listening port")
 	profile := flag.String("profile", "", "write cpu profile to file")
+	excludeIP := flag.String("excludeip", "", "exclude ip to forward")
 
 	flag.Parse()
 	defer glog.Flush()
@@ -37,6 +38,6 @@ func main() {
 
 	fmt.Println("The proxy is listening on port: ", *port)
 
-	server := proxy.StartProxy(*port)
+	server := proxy.StartProxy(*port, *excludeIP)
 	server.ListenAndServe()
 }

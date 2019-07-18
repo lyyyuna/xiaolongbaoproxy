@@ -4,12 +4,18 @@ import (
 	"github.com/golang/glog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
-func StartProxy(port string) *http.Server{
+func StartProxy(port string, excludeIPs string) *http.Server{
 
-	ips := getIPs()
+	iparr := strings.Split(excludeIPs, ",")
+	ips := make(map[string]int)
+	for _, ip := range iparr {
+		ips[ip] = 1
+	}
+	ips = getIPs(ips)
 	handler := &WrappedHandler{
 		ips,
 	}
@@ -23,8 +29,7 @@ func StartProxy(port string) *http.Server{
 	return server
 }
 
-func getIPs() (ips map[string]int) {
-	ips = make(map[string]int)
+func getIPs(ips map[string]int) (map[string]int) {
 
 	interfaceAddrs, err := net.InterfaceAddrs()
 	if err != nil {
