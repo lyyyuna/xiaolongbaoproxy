@@ -26,7 +26,7 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 		if !matched {
 			host += ":443"
 		}
-		connOut, err := net.DialTimeout("tcp", host, time.Second*30)
+		connOut, err := net.DialTimeout("tcp", host, time.Second*5)
 		if err != nil {
 			glog.Error("Dial out to ", host, " failed, the error is ", err)
 			res.WriteHeader(502)
@@ -55,7 +55,7 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 	if !matched {
 		host += ":80"
 	}
-	connOut, err := net.DialTimeout("tcp", host, time.Second*30)
+	connOut, err := net.DialTimeout("tcp", host, time.Second*5)
 	if err != nil {
 		glog.Error("Dial out to ", host, " failed, the error is ", err)
 		res.WriteHeader(502)
@@ -64,12 +64,14 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 	defer connOut.Close()
 
 	// transfer client's request to remote server
+	connOut.SetDeadline(time.Now().Add(time.Second * 5))
 	if err = req.Write(connOut); err != nil {
-		glog.Error("Fail to connect to remote server, the error is: ", err)
+		glog.Error("Fail to send client's data to remote server, the error is: ", err)
 		res.WriteHeader(502)
 		return
 	}
 
+	connOut.SetDeadline(time.Now().Add(time.Second * 5))
 	respFromRemote, err := http.ReadResponse(bufio.NewReader(connOut), req)
 	if err != nil && err != io.EOF {
 		glog.Error("Fail to read response from remote server, the error is: ", err)
