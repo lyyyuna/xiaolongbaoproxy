@@ -17,6 +17,14 @@ type WrappedHandler struct {
 }
 
 var cnt int64
+var blacklist = map[string]int {
+"www.google.com" : 1,
+"twitter.com" : 1,
+"www.instagram.com" : 1,
+"m.youtube.com" : 1,
+"www.youtube.com" : 1,
+"mobile.twitter.com" : 1,
+}
 
 func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
@@ -26,6 +34,13 @@ func (handler *WrappedHandler) ServeHTTP(res http.ResponseWriter, req *http.Requ
 	// check if local
 	if handler.checkIfLocalDest(strings.Split(req.Host, ":")[0]) {
 		glog.Error("The destination is a self, maybe attack")
+		res.WriteHeader(502)
+		return
+	}
+
+	// check if in the blacklist
+	if handler.checkIfBlacklist(strings.Split(req.Host, ":")[0]) {
+		glog.Error("The host is in the blacklist: ", req.Host)
 		res.WriteHeader(502)
 		return
 	}
@@ -141,7 +156,7 @@ func (handler *WrappedHandler) dumpHTTP(req *http.Request, res *http.Response) {
 func (handler *WrappedHandler) statistics() {
 	cnt++
 	if cnt % 10 == 0 {
-		glog.Info("Has processed requests: ", cnt)
+		glog.Info("MONITOR: Has processed requests: ", cnt)
 	}
 }
 
@@ -150,5 +165,13 @@ func (handler *WrappedHandler) checkIfLocalDest(dest string) bool {
 		return true
 	}
 
+	return false
+}
+
+func (handler *WrappedHandler) checkIfBlacklist(host string) bool {
+	_, ok := blacklist[host]
+	if ok {
+		return true
+	}
 	return false
 }

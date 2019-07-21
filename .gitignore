@@ -5,3 +5,4 @@ main
 go.sum
 *.prof
 log
+*.exe

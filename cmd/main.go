@@ -31,6 +31,7 @@ func main() {
 		go func() {
 			<-c
 			fmt.Println("exiting")
+			glog.Flush()
 			pprof.StopCPUProfile()
 			os.Exit(1)
 		}()

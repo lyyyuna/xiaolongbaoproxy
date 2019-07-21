@@ -23,7 +23,7 @@ func StartProxy(port string, excludeIPs string) *http.Server{
 		Addr: ":" + port,
 		Handler: handler,
 		ReadTimeout: 5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 5 * time.Second,
 	}
 	glog.Info("Proxy server starting..")
 	return server
