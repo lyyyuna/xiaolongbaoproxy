@@ -45,7 +45,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	} else {
 		ctx := ProxyCtx{Req: r, Sess: atomic.AddInt64(&proxy.Sess, 1)}
-		log.Infof("Session: %v, Got request: %v, %v, %v, %v", ctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
+		log.Infof("[Session: %v] Got request: %v, %v, %v, %v", ctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
 
 		if !r.URL.IsAbs() {
 			proxy.NonSupportHandler.ServeHTTP(w, r)
@@ -56,7 +56,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		resp, err := proxy.Tr.RoundTrip(r)
 		if err != nil || resp == nil {
 			errorString := fmt.Sprintf("Received error status: %v", err.Error())
-			log.Errorf("Session %v, the error is: ", ctx.Sess, errorString)
+			log.Errorf("[Session: %v] The error is: ", ctx.Sess, errorString)
 			http.Error(w, errorString, 500)
 			return
 		}
@@ -66,16 +66,16 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(resp.StatusCode)
 		nr, err := io.Copy(w, resp.Body)
 		if err != nil {
-			log.Errorf("Session %v, error copying data from remote to client.", ctx.Sess)
+			log.Errorf("[Session: %v] Error copying data from remote to client.", ctx.Sess)
 		}
-		log.Infof("Session %v, deliver %v bytes from remote to client", ctx.Sess, nr)
+		log.Infof("[Session: %v] Deliver %v bytes from remote to client", ctx.Sess, nr)
 	}
 }
 
 func NewProxyHttpServer() *ProxyHttpServer {
 	proxy := ProxyHttpServer{
 		NonSupportHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "This a proxy server, your request cannot be recognized.", 500)
+			http.Error(w, "[Session: %v] This is a proxy server, your request cannot be recognized.", 500)
 		}),
 		Tr: &http.Transport{},
 	}
