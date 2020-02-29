@@ -5,14 +5,23 @@ import (
 	log "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
+	"regexp"
 	"sync/atomic"
+)
+
+const (
+	ConnectNormal = iota
+	ConnectMitm
 )
 
 type ProxyHttpServer struct {
 	Sess              int64
 	NonSupportHandler http.Handler
 	Tr                *http.Transport
+	ProxyType         int
 }
+
+var hasPort = regexp.MustCompile(`:\d+$`)
 
 func (proxy *ProxyHttpServer) removeProxyRelatedHeaders(r *http.Request) {
 	// If no Accept-Encoding header exists, Transport will add the headers it can accept
@@ -41,10 +50,11 @@ func (proxy *ProxyHttpServer) copyHeaders(dst, src http.Header) {
 }
 
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "CONNECT" {
+	ctx := ProxyCtx{Req: r, Sess: atomic.AddInt64(&proxy.Sess, 1)}
 
+	if r.Method == "CONNECT" {
+		proxy.handleHttps(w, r, &ctx)
 	} else {
-		ctx := ProxyCtx{Req: r, Sess: atomic.AddInt64(&proxy.Sess, 1)}
 		log.Infof("[Session: %v] Got request: %v, %v, %v, %v", ctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
 
 		if !r.URL.IsAbs() {
