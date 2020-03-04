@@ -16,16 +16,30 @@ var basicCmd = &cobra.Command{
 }
 
 var (
-	host string
-	port int
+	host      string
+	port      int
+	mongoHost string
+	mongoPort int
 )
 
 func init() {
-	basicCmd.Flags().StringVarP(&host, "host server address", "s", "0.0.0.0", "Specify the host server address.")
-	basicCmd.Flags().IntVarP(&port, "port number", "p", 8080, "Specify the port number.")
+	basicCmd.Flags().StringVarP(&host, "server", "s", "0.0.0.0", "Specify the host server address.")
+	basicCmd.Flags().IntVarP(&port, "port", "p", 8080, "Specify the port number.")
+	basicCmd.Flags().StringVarP(&mongoHost, "mongohost", "", "", "Specify the mongo server address.")
+	basicCmd.Flags().IntVarP(&mongoPort, "mongoport", "", 27017, "Specify the mongo server port.")
 }
 
 func checkValidAddrPort(host string, port int) {
+	if net.ParseIP(host) == nil {
+		panic("IP address is invalid.")
+	}
+
+	if port < 1 || port > 65535 {
+		panic("Invalid port address.")
+	}
+}
+
+func checkValidMongoAddress(host string, port int) {
 	if net.ParseIP(host) == nil {
 		panic("IP address is invalid.")
 	}
