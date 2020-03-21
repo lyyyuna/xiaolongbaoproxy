@@ -2,11 +2,12 @@ package internal
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"regexp"
 	"sync/atomic"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -55,7 +56,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if r.Method == "CONNECT" {
 		proxy.handleHttps(w, r, &ctx)
 	} else {
-		log.Infof("[Session: %v] Got request: %v, %v, %v, %v", ctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
+		zap.S().Infof("[Session: %v] Got request: %v, %v, %v, %v", ctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
 
 		if !r.URL.IsAbs() {
 			proxy.NonSupportHandler.ServeHTTP(w, r)
@@ -66,7 +67,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		resp, err := proxy.Tr.RoundTrip(r)
 		if err != nil || resp == nil {
 			errorString := fmt.Sprintf("Received error status: %v", err.Error())
-			log.Errorf("[Session: %v] The error is: ", ctx.Sess, errorString)
+			zap.S().Errorf("[Session: %v] The error is: ", ctx.Sess, errorString)
 			http.Error(w, errorString, 500)
 			return
 		}
@@ -76,9 +77,9 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(resp.StatusCode)
 		nr, err := io.Copy(w, resp.Body)
 		if err != nil {
-			log.Errorf("[Session: %v] Error copying data from remote to client.", ctx.Sess)
+			zap.S().Errorf("[Session: %v] Error copying data from remote to client.", ctx.Sess)
 		}
-		log.Infof("[Session: %v] Deliver %v bytes from remote to client", ctx.Sess, nr)
+		zap.S().Infof("[Session: %v] Deliver %v bytes from remote to client", ctx.Sess, nr)
 	}
 }
 

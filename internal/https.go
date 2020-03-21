@@ -1,15 +1,16 @@
 package internal
 
 import (
-	log "github.com/sirupsen/logrus"
 	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request, proxyctx *ProxyCtx) {
-	log.Infof("[Session: %v] Got request: %v, %v, %v, %v", proxyctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
+	zap.S().Infof("[Session: %v] Got request: %v, %v, %v, %v", proxyctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
 
 	hij, ok := w.(http.Hijacker)
 	if !ok {

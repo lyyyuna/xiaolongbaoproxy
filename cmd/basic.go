@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"net"
 	"net/http"
 	"xiaolongbaoproxy/internal"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 var basicCmd = &cobra.Command{
@@ -53,7 +54,7 @@ func runProxy(cmd *cobra.Command, args []string) {
 	checkValidAddrPort(host, port)
 
 	addr := fmt.Sprintf("%v:%v", host, port)
-	log.Infof("Proxy server is hosting on %v", addr)
+	zap.S().Infof("Proxy server is hosting on %v", addr)
 	p := internal.NewProxyHttpServer()
 	http.ListenAndServe(addr, p)
 }

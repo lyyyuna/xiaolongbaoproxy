@@ -1,10 +1,13 @@
 package internal
 
 import (
+	"context"
 	"fmt"
+	"time"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"time"
+	"go.uber.org/zap"
 )
 
 type httpMessage struct {
@@ -21,13 +24,17 @@ type mongoClient struct {
 	client       *mongo.Client
 	host         string
 	port         int
+	database     string
+	collection   string
 	interval     int
 	httptHistory chan httpMessage
 }
 
-func NewMongoClient(host string, port, interval int) *mongoClient {
+func NewMongoClient(host string, port int, database string, collection string, interval int) *mongoClient {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	mongoUri := fmt.Sprintf("mongodb://%v:%v", host, port)
-	client, err := mongo.NewClient(options.Client().ApplyURI(mongoUri))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoUri))
 	if err != nil {
 		panic("Cannot connect to mongodb, the error is " + err.Error())
 	}
@@ -36,6 +43,8 @@ func NewMongoClient(host string, port, interval int) *mongoClient {
 		client:       client,
 		host:         host,
 		port:         port,
+		database:     database,
+		collection:   collection,
 		interval:     interval,
 		httptHistory: make(chan httpMessage),
 	}
@@ -63,5 +72,15 @@ func (mc *mongoClient) persistLoop() {
 }
 
 func (mc *mongoClient) saveToMongo(messages []httpMessage) {
-
+	collection := mc.client.Database(mc.database).Collection(mc.collection)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var data []interface{}
+	for _, t := range data {
+		data = append(data, t)
+	}
+	_, err := collection.InsertMany(ctx, data)
+	if err != nil {
+		zap.S().Errorf("Error while saving data to mongodb: %v", err)
+	}
 }
