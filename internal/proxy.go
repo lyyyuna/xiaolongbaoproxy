@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"sync/atomic"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -20,6 +21,7 @@ type ProxyHttpServer struct {
 	NonSupportHandler http.Handler
 	Tr                *http.Transport
 	ProxyType         int
+	Mc                *MongoClient
 }
 
 var hasPort = regexp.MustCompile(`:\d+$`)
@@ -57,6 +59,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		proxy.handleHttps(w, r, &ctx)
 	} else {
 		zap.S().Infof("[Session: %v] Got request: %v, %v, %v, %v", ctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
+		start := time.Now()
 
 		if !r.URL.IsAbs() {
 			proxy.NonSupportHandler.ServeHTTP(w, r)
@@ -80,6 +83,21 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			zap.S().Errorf("[Session: %v] Error copying data from remote to client.", ctx.Sess)
 		}
 		zap.S().Infof("[Session: %v] Deliver %v bytes from remote to client", ctx.Sess, nr)
+
+		end := time.Now()
+		elapsed := end.Sub(start)
+		if proxy.Mc != nil {
+			proxy.Mc.httptHistory <- &httpMessage{
+				Host:     r.Host,
+				Port:     r.URL.Port(),
+				Method:   r.Method,
+				Path:     r.URL.Path,
+				Size:     nr,
+				Duration: elapsed.Milliseconds(),
+				Time:     start.Unix(),
+				Scheme:   "http",
+			}
+		}
 	}
 }
 
@@ -89,6 +107,7 @@ func NewProxyHttpServer() *ProxyHttpServer {
 			http.Error(w, "[Session: %v] This is a proxy server, your request cannot be recognized.", 500)
 		}),
 		Tr: &http.Transport{},
+		Mc: nil,
 	}
 	return &proxy
 }

@@ -52,9 +52,16 @@ func checkValidMongoAddress(host string, port int) {
 
 func runProxy(cmd *cobra.Command, args []string) {
 	checkValidAddrPort(host, port)
-
 	addr := fmt.Sprintf("%v:%v", host, port)
 	zap.S().Infof("Proxy server is hosting on %v", addr)
+
 	p := internal.NewProxyHttpServer()
+	var mc *internal.MongoClient
+	if mongoHost != "" {
+		checkValidMongoAddress(mongoHost, mongoPort)
+		mc = internal.NewMongoClient(mongoHost, mongoPort, "goproxy", "record", 5)
+		p.Mc = mc
+		go mc.PersistLoop()
+	}
 	http.ListenAndServe(addr, p)
 }

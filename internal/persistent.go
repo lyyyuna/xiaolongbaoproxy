@@ -12,25 +12,26 @@ import (
 
 type httpMessage struct {
 	Host     string
-	Port     int
+	Port     string
 	Method   string
 	Path     string
-	Size     int
-	Duration int
-	Time     int
+	Size     int64
+	Duration int64
+	Time     int64
+	Scheme   string
 }
 
-type mongoClient struct {
+type MongoClient struct {
 	client       *mongo.Client
 	host         string
 	port         int
 	database     string
 	collection   string
 	interval     int
-	httptHistory chan httpMessage
+	httptHistory chan *httpMessage
 }
 
-func NewMongoClient(host string, port int, database string, collection string, interval int) *mongoClient {
+func NewMongoClient(host string, port int, database string, collection string, interval int) *MongoClient {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	mongoUri := fmt.Sprintf("mongodb://%v:%v", host, port)
@@ -39,19 +40,19 @@ func NewMongoClient(host string, port int, database string, collection string, i
 		panic("Cannot connect to mongodb, the error is " + err.Error())
 	}
 
-	return &mongoClient{
+	return &MongoClient{
 		client:       client,
 		host:         host,
 		port:         port,
 		database:     database,
 		collection:   collection,
 		interval:     interval,
-		httptHistory: make(chan httpMessage),
+		httptHistory: make(chan *httpMessage),
 	}
 }
 
-func (mc *mongoClient) persistLoop() {
-	var httpMessages []httpMessage
+func (mc *MongoClient) PersistLoop() {
+	var httpMessages []*httpMessage
 	// two cases won't interfere with each other
 	for {
 		select {
@@ -71,12 +72,12 @@ func (mc *mongoClient) persistLoop() {
 	}
 }
 
-func (mc *mongoClient) saveToMongo(messages []httpMessage) {
+func (mc *MongoClient) saveToMongo(messages []*httpMessage) {
 	collection := mc.client.Database(mc.database).Collection(mc.collection)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var data []interface{}
-	for _, t := range data {
+	for _, t := range messages {
 		data = append(data, t)
 	}
 	_, err := collection.InsertMany(ctx, data)

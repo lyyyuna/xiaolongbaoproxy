@@ -23,7 +23,7 @@ func Execute() {
 }
 
 func init() {
-	logger, _ := zap.NewProduction()
+	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 	rootCmd.AddCommand(basicCmd)

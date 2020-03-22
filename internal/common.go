@@ -21,13 +21,15 @@ func httpError(w io.WriteCloser, ctx *ProxyCtx, err error) {
 }
 
 // half close, as both sides are a normal connection
-func copyAndHalfClose(proxyctx *ProxyCtx, dst, src *net.TCPConn) {
+func copyAndHalfClose(proxyctx *ProxyCtx, dst, src *net.TCPConn, wg *sync.WaitGroup) {
 	if _, err := io.Copy(dst, src); err != nil {
 		zap.S().Errorf("[Session: %v] Error copying to clients, the error is: %v", proxyctx.Sess, err)
 	}
 
 	dst.CloseWrite()
 	src.CloseRead()
+
+	wg.Done()
 }
 
 // copy without close, one side is abnormal,

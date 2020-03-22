@@ -11,6 +11,7 @@ import (
 
 func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request, proxyctx *ProxyCtx) {
 	zap.S().Infof("[Session: %v] Got request: %v, %v, %v, %v", proxyctx.Sess, r.Method, r.Host, r.URL.Path, r.URL.String())
+	start := time.Now()
 
 	hij, ok := w.(http.Hijacker)
 	if !ok {
@@ -50,8 +51,12 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 		targetServerTCPConn, targetOk := targetServerConn.(*net.TCPConn)
 		proxyClientTCPConn, clientOk := proxyClientConn.(*net.TCPConn)
 		if targetOk && clientOk {
-			go copyAndHalfClose(proxyctx, targetServerTCPConn, proxyClientTCPConn)
-			go copyAndHalfClose(proxyctx, proxyClientTCPConn, targetServerTCPConn)
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go copyAndHalfClose(proxyctx, targetServerTCPConn, proxyClientTCPConn, &wg)
+			go copyAndHalfClose(proxyctx, proxyClientTCPConn, targetServerTCPConn, &wg)
+			wg.Wait()
+			proxy.sendToPersistChannel(start, r)
 		} else {
 			go func() {
 				var wg sync.WaitGroup
@@ -62,7 +67,25 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 
 				targetServerTCPConn.Close()
 				proxyClientTCPConn.Close()
+				proxy.sendToPersistChannel(start, r)
 			}()
+		}
+	}
+}
+
+func (proxy *ProxyHttpServer) sendToPersistChannel(start time.Time, r *http.Request) {
+	if proxy.Mc != nil {
+		end := time.Now()
+		elapsed := end.Sub(start)
+		proxy.Mc.httptHistory <- &httpMessage{
+			Host:     r.Host,
+			Port:     r.URL.Port(),
+			Method:   r.Method,
+			Path:     r.URL.Path,
+			Size:     0,
+			Duration: elapsed.Milliseconds(),
+			Time:     start.Unix(),
+			Scheme:   "https",
 		}
 	}
 }
