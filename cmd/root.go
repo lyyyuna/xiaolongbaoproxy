@@ -28,4 +28,5 @@ func init() {
 	zap.ReplaceGlobals(logger)
 	rootCmd.AddCommand(basicCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(mitmCmd)
 }

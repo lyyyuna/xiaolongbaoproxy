@@ -1,29 +1,69 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
+
+	"xiaolongbaoproxy/pkg/key"
 
 	"go.uber.org/zap"
 )
 
 type ProxyServer struct {
-	Mitm bool
-	Tr   *http.Transport
-	Hook func(*ProxyCtx, *http.Request)
+	Mitm       bool
+	Tr         *http.Transport
+	Hook       func(*ProxyCtx, *http.Request)
+	Cert       *key.Certificate
+	PrivateKey *key.PrivateKey
+	TlsConfig  *tls.Config
 }
 
 var hasPort = regexp.MustCompile(`:\d+$`)
 
-func NewProxyServer(mitm bool, hook func(*ProxyCtx, *http.Request)) *ProxyServer {
+func NewProxyServer(hook func(*ProxyCtx, *http.Request)) *ProxyServer {
 	return &ProxyServer{
-		Mitm: mitm,
+		Mitm: false,
 		Tr:   &http.Transport{},
 		Hook: hook,
+	}
+}
+
+func NewMitmProxyServer(certpath, pkpath string, hook func(*ProxyCtx, *http.Request)) *ProxyServer {
+	cert, err := key.LoadCertificateFromFile(certpath)
+	if err != nil {
+		zap.S().Fatal("read cert failed")
+	}
+	pk, err := key.LoadPKFromFile(pkpath)
+	if err != nil {
+		zap.S().Fatal("read key failed")
+	}
+	return &ProxyServer{
+		Mitm:       true,
+		Tr:         &http.Transport{},
+		Hook:       hook,
+		Cert:       cert,
+		PrivateKey: pk,
+		TlsConfig: &tls.Config{
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+				tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+				tls.TLS_RSA_WITH_RC4_128_SHA,
+				tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			},
+			PreferServerCipherSuites: true,
+			InsecureSkipVerify:       false},
 	}
 }
 
@@ -50,7 +90,7 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
-	defer res.Body.Close()
+	// defer res.Body.Close()
 	w.WriteHeader(res.StatusCode)
 	nb, err := io.Copy(w, res.Body)
 	if err != nil {
@@ -63,11 +103,11 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 }
 
 func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if p.Hook != nil {
-			p.Hook(ctx, r)
-		}
-	}()
+	// defer func() {
+	// 	if p.Hook != nil {
+	// 		p.Hook(ctx, r)
+	// 	}
+	// }()
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -82,7 +122,9 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
-	defer connFromClient.Close()
+	// should not close, or the mitm proxy server (a goroutine) will use
+	// a close connection
+	// defer connFromClient.Close()
 
 	host := r.URL.Host
 	if !p.Mitm {
@@ -111,12 +153,48 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		go copyWithWait(ctx, connToRemoteTcp, connFromClientTcp, &wg)
 		go copyWithWait(ctx, connFromClientTcp, connToRemoteTcp, &wg)
 		wg.Wait()
+	} else {
+		addr := r.Host
+		host := strings.Split(addr, ":")[0]
+		signedcert, err := key.CertificateForKey(host, p.PrivateKey, p.Cert)
+		if err != nil {
+			zap.S().Errorf("[%v] fail to generate a key for: %v, reason: %v", ctx.session, host, err)
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
+		keypair, err := tls.X509KeyPair(signedcert.PEMEncoded(), p.PrivateKey.PEMEncoded())
+
+		if err != nil {
+			zap.S().Errorf("[%v] fail to generate a keypair for: %v", ctx.session, host)
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
+
+		newTlsConfig := &tls.Config{
+			CipherSuites:             p.TlsConfig.CipherSuites,
+			PreferServerCipherSuites: p.TlsConfig.PreferServerCipherSuites,
+			InsecureSkipVerify:       p.TlsConfig.InsecureSkipVerify,
+			Certificates:             []tls.Certificate{keypair},
+		}
+		tlsConnFromClient := tls.Server(connFromClient, newTlsConfig)
+		httpsListener := &HttpsListener{conn: tlsConnFromClient}
+		httpsHandler := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			r.URL.Scheme = "https"
+			r.URL.Host = r.Host
+			p.TransferPlainText(ctx, rw, r)
+		})
+
+		connFromClient.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+
+		go func() {
+			http.Serve(httpsListener, httpsHandler)
+		}()
 	}
 }
 
 func copyWithWait(ctx *ProxyCtx, dst, src *net.TCPConn, wg *sync.WaitGroup) {
-	_, err := io.Copy(dst, src)
-	if err != nil {
+	nb, err := io.Copy(dst, src)
+	if err != nil && nb == 0 {
 		zap.S().Errorf("[%v] transfer encountering error: %v", ctx.session, err)
 	}
 	dst.CloseWrite()

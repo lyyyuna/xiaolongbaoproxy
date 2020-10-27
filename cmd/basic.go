@@ -11,7 +11,7 @@ import (
 
 var basicCmd = &cobra.Command{
 	Use:   "basic",
-	Short: "Start a basic http proxy with mitm",
+	Short: "Start a basic http proxy",
 	Run:   runProxy,
 }
 
@@ -29,6 +29,6 @@ func runProxy(cmd *cobra.Command, args []string) {
 	addr := fmt.Sprintf("%v:%v", host, port)
 	zap.S().Infof("Proxy server is hosting on %v", addr)
 
-	p := proxy.NewProxyServer(false, nil)
+	p := proxy.NewProxyServer(nil)
 	http.ListenAndServe(addr, p)
 }
