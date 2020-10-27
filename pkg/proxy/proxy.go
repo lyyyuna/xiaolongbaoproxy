@@ -103,18 +103,23 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		defer connToRemote.Close()
 
 		connFromClient.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go copyWithWait(ctx, connToRemote, connFromClient, &wg)
-		go copyWithWait(ctx, connFromClient, connToRemote, &wg)
+		connToRemoteTcp, _ := connToRemote.(*net.TCPConn)
+		connFromClientTcp, _ := connFromClient.(*net.TCPConn)
+		go copyWithWait(ctx, connToRemoteTcp, connFromClientTcp, &wg)
+		go copyWithWait(ctx, connFromClientTcp, connToRemoteTcp, &wg)
 		wg.Wait()
 	}
 }
 
-func copyWithWait(ctx *ProxyCtx, dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
+func copyWithWait(ctx *ProxyCtx, dst, src *net.TCPConn, wg *sync.WaitGroup) {
 	_, err := io.Copy(dst, src)
 	if err != nil {
 		zap.S().Errorf("[%v] transfer encountering error: %v", ctx.session, err)
 	}
+	dst.CloseWrite()
+	src.CloseRead()
 	wg.Done()
 }
