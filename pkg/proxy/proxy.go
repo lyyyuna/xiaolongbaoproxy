@@ -45,17 +45,17 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 	}()
 
 	res, err := p.Tr.RoundTrip(r)
-	defer res.Body.Close()
 	if err != nil {
-		zap.S().Errorf("[%v] response from %v error", ctx.session, res.Request.URL)
-		http.Error(w, err.Error(), res.StatusCode)
+		zap.S().Errorf("[%v] response from %v error", ctx.session, r.URL)
+		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+	defer res.Body.Close()
 	w.WriteHeader(res.StatusCode)
 	nb, err := io.Copy(w, res.Body)
 	if err != nil {
 		zap.S().Errorf("[%v] send response back to client failed: %v", ctx.session, err)
-		http.Error(w, err.Error(), res.StatusCode)
+		http.Error(w, "", res.StatusCode)
 		return
 	}
 	zap.S().Infof("[%v] transfer %v bytes", ctx.session, nb)
@@ -82,6 +82,7 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+	defer connFromClient.Close()
 
 	host := r.URL.Host
 	if !p.Mitm {
@@ -96,9 +97,10 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		if err != nil {
 			zap.S().Errorf("[%v] fail to connect to remote: %v", ctx.session, err)
 			io.WriteString(w, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
-			connToRemote.Close()
+			// connToRemote.Close()
 			return
 		}
+		defer connToRemote.Close()
 
 		connFromClient.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 		var wg sync.WaitGroup
