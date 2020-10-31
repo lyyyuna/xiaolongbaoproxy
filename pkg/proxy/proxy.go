@@ -92,8 +92,10 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 		return
 	}
 	// defer res.Body.Close() should not close,
-	for k, v := range res.Header {
-		w.Header().Set(k, v[0])
+	for k, vs := range res.Header {
+		for _, v := range vs {
+			w.Header().Set(k, v)
+		}
 	}
 	w.WriteHeader(res.StatusCode)
 	nb, err := io.Copy(w, res.Body)
@@ -226,8 +228,10 @@ func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.Respo
 		return
 	}
 
-	for k, v := range respRemote.Header {
-		w.Header().Set(k, v[0])
+	for k, vs := range respRemote.Header {
+		for _, v := range vs {
+			w.Header().Set(k, v)
+		}
 	}
 	w.WriteHeader(respRemote.StatusCode)
 	nb, err := io.Copy(w, respRemote.Body)
