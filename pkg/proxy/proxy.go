@@ -162,13 +162,13 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 	} else {
 		addr := r.Host
 		host := strings.Split(addr, ":")[0]
-		signedcert, err := key.CertificateForKey(host, p.PrivateKey, p.Cert)
+		signedcert, signedkey, err := key.CertificateForKey(host, p.PrivateKey, p.Cert)
 		if err != nil {
 			zap.S().Errorf("[%v] fail to generate a key for: %v, reason: %v", ctx.session, host, err)
 			http.Error(w, "", http.StatusInternalServerError)
 			return
 		}
-		keypair, err := tls.X509KeyPair(signedcert.PEMEncoded(), p.PrivateKey.PEMEncoded())
+		keypair, err := tls.X509KeyPair(signedcert.PEMEncoded(), signedkey.PEMEncoded())
 
 		if err != nil {
 			zap.S().Errorf("[%v] fail to generate a keypair for: %v", ctx.session, host)

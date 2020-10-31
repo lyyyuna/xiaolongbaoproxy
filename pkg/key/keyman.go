@@ -68,7 +68,7 @@ func LoadCertificateFromFile(filename string) (*Certificate, error) {
 	return &Certificate{cert: cert}, nil
 }
 
-func CertificateForKey(CN string, key *PrivateKey, ca *Certificate) (*Certificate, error) {
+func CertificateForKey(CN string, key *PrivateKey, ca *Certificate) (*Certificate, *PrivateKey, error) {
 	// set up our server certificate template
 	template := &x509.Certificate{
 		SerialNumber: new(big.Int).SetInt64(int64(time.Now().UnixNano())),
@@ -89,18 +89,19 @@ func CertificateForKey(CN string, key *PrivateKey, ca *Certificate) (*Certificat
 		template.IPAddresses = []net.IP{ip}
 	}
 
-	// sign the cert with CA
-	signedBytes, err := x509.CreateCertificate(rand.Reader, template, ca.cert, &key.rsaKey.PublicKey, key.rsaKey)
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	// sign the cert with root CA
+	signedBytes, err := x509.CreateCertificate(rand.Reader, template, ca.cert, priv.Public(), key.rsaKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	signedCert, err := x509.ParseCertificate(signedBytes)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &Certificate{cert: signedCert, derBytes: signedBytes}, nil
+	return &Certificate{cert: signedCert, derBytes: signedBytes}, &PrivateKey{rsaKey: priv}, nil
 }
 
 func (k *PrivateKey) pemBlock() *pem.Block {
