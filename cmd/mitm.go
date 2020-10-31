@@ -16,8 +16,9 @@ var mitmCmd = &cobra.Command{
 }
 
 var (
-	certpath string
-	keypath  string
+	certpath  string
+	keypath   string
+	certcache string
 )
 
 func init() {
@@ -25,12 +26,13 @@ func init() {
 	mitmCmd.Flags().IntVarP(&port, "port", "p", 8080, "Specify the port number.")
 	mitmCmd.Flags().StringVarP(&certpath, "certpath", "c", "root.crt", "Specify the path for the CA certificate.")
 	mitmCmd.Flags().StringVarP(&keypath, "keypath", "k", "root.key", "Specify the path for the CA private key.")
+	mitmCmd.Flags().StringVarP(&certcache, "certcache", "", "certstore.db", "Specify the path for the certificate cache store.")
 }
 
 func runMitmProxy(cmd *cobra.Command, args []string) {
 	addr := fmt.Sprintf("%v:%v", host, port)
 	zap.S().Infof("Proxy server is hosting on %v", addr)
 
-	p := proxy.NewMitmProxyServer(certpath, keypath, nil)
+	p := proxy.NewMitmProxyServer(certpath, keypath, certcache, nil)
 	http.ListenAndServe(addr, p)
 }

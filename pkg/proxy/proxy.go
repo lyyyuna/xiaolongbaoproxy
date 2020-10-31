@@ -35,7 +35,7 @@ func NewProxyServer(hook func(*ProxyCtx, *http.Request)) *ProxyServer {
 	}
 }
 
-func NewMitmProxyServer(certpath, pkpath string, hook func(*ProxyCtx, *http.Request)) *ProxyServer {
+func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*ProxyCtx, *http.Request)) *ProxyServer {
 	cert, err := key.LoadCertificateFromFile(certpath)
 	if err != nil {
 		zap.S().Fatal("read cert failed")
@@ -190,9 +190,7 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 
 		connFromClient.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
-		go func() {
-			http.Serve(httpsListener, httpsHandler)
-		}()
+		http.Serve(httpsListener, httpsHandler)
 	}
 }
 
