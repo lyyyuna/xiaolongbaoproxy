@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"crypto/tls"
 	"io"
 	"net"
@@ -90,7 +91,10 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
-	// defer res.Body.Close()
+	// defer res.Body.Close() should not close,
+	for k, v := range res.Header {
+		w.Header().Set(k, v[0])
+	}
 	w.WriteHeader(res.StatusCode)
 	nb, err := io.Copy(w, res.Body)
 	if err != nil {
@@ -179,9 +183,7 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		tlsConnFromClient := tls.Server(connFromClient, newTlsConfig)
 		httpsListener := &HttpsListener{conn: tlsConnFromClient}
 		httpsHandler := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-			r.URL.Scheme = "https"
-			r.URL.Host = r.Host
-			p.TransferPlainText(ctx, rw, r)
+			p.TransferPlainTextToHttpsRemote(ctx, rw, r)
 		})
 
 		connFromClient.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
@@ -190,6 +192,53 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 			http.Serve(httpsListener, httpsHandler)
 		}()
 	}
+}
+
+func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if p.Hook != nil {
+			p.Hook(ctx, r)
+		}
+	}()
+
+	host := r.Host
+	if !hasPort.MatchString(host) {
+		host += ":443"
+	}
+	connRemote, err := tls.Dial("tcp", host, p.TlsConfig)
+	if err != nil {
+		zap.S().Errorf("[%v][tls] fail to dial to : %v, reason: %v", ctx.session, host, err)
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	defer connRemote.Close()
+
+	if err = r.Write(connRemote); err != nil {
+		zap.S().Errorf("[%v][tls] fail to send request to : %v, reason: %v", ctx.session, host, err)
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	respRemote, err := http.ReadResponse(bufio.NewReader(connRemote), r)
+	if err != nil && err != io.EOF {
+		zap.S().Errorf("[%v][tls] fail to read response from : %v, reason: %v", ctx.session, host, err)
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	for k, v := range respRemote.Header {
+		w.Header().Set(k, v[0])
+	}
+	w.WriteHeader(respRemote.StatusCode)
+	nb, err := io.Copy(w, respRemote.Body)
+	if err != nil {
+		zap.S().Errorf("[%v][tls] send response back to client failed: %v", ctx.session, err)
+		http.Error(w, "", respRemote.StatusCode)
+		return
+	}
+	// defer respRemote.Body.Close() should NOT close, or tls connection will break
+	zap.S().Infof("[%v][tls] transfer %v bytes", ctx.session, nb)
+	ctx.TransferBytes = nb
 }
 
 func copyWithWait(ctx *ProxyCtx, dst, src *net.TCPConn, wg *sync.WaitGroup) {

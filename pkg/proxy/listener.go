@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"io"
 	"net"
 )
 
@@ -10,11 +11,17 @@ type HttpsListener struct {
 }
 
 func (l *HttpsListener) Accept() (net.Conn, error) {
-	return l.conn, nil
+	if l.conn != nil {
+		conn := l.conn
+		l.conn = nil
+		return conn, nil
+	} else {
+		return nil, io.EOF
+	}
 }
 
 func (l *HttpsListener) Close() error {
-	return l.Close()
+	return nil
 }
 
 func (l *HttpsListener) Addr() net.Addr {
