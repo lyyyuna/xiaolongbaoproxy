@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"xiaolongbaoproxy/pkg/key"
+	"xiaolongbaoproxy/pkg/keycache"
 
 	"go.uber.org/zap"
 )
@@ -23,6 +24,7 @@ type ProxyServer struct {
 	Cert       *key.Certificate
 	PrivateKey *key.PrivateKey
 	TlsConfig  *tls.Config
+	certCache  *keycache.CertCache
 }
 
 var hasPort = regexp.MustCompile(`:\d+$`)
@@ -38,11 +40,15 @@ func NewProxyServer(hook func(*ProxyCtx, *http.Request)) *ProxyServer {
 func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*ProxyCtx, *http.Request)) *ProxyServer {
 	cert, err := key.LoadCertificateFromFile(certpath)
 	if err != nil {
-		zap.S().Fatal("read cert failed")
+		zap.S().Fatalf("read cert failed: %v", err)
 	}
 	pk, err := key.LoadPKFromFile(pkpath)
 	if err != nil {
-		zap.S().Fatal("read key failed")
+		zap.S().Fatalf("read key failed: %v", err)
+	}
+	cache, err := keycache.NewCertCache(cachepath, cert, pk)
+	if err != nil {
+		zap.S().Fatalf("initalize cert cache failed: %v", err)
 	}
 	return &ProxyServer{
 		Mitm:       true,
@@ -65,6 +71,7 @@ func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*Pr
 			},
 			PreferServerCipherSuites: true,
 			InsecureSkipVerify:       false},
+		certCache: cache,
 	}
 }
 
@@ -162,25 +169,39 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 	} else {
 		addr := r.Host
 		host := strings.Split(addr, ":")[0]
-		signedcert, signedkey, err := key.CertificateForKey(host, p.PrivateKey, p.Cert)
-		if err != nil {
-			zap.S().Errorf("[%v] fail to generate a key for: %v, reason: %v", ctx.session, host, err)
-			http.Error(w, "", http.StatusInternalServerError)
-			return
-		}
-		keypair, err := tls.X509KeyPair(signedcert.PEMEncoded(), signedkey.PEMEncoded())
 
+		// get from key cache
+		keypair, err := p.certCache.GetKeyPair(host)
+		if keypair == nil {
+			keypair = &tls.Certificate{}
+		}
+		if err == nil && keypair != nil {
+			zap.S().Debugf("[%v][tls] found one key pair in cache for: %v", ctx.session, host)
+		}
 		if err != nil {
-			zap.S().Errorf("[%v] fail to generate a keypair for: %v", ctx.session, host)
-			http.Error(w, "", http.StatusInternalServerError)
-			return
+			zap.S().Infof("[%v][tls] key not found for %v: %v", ctx.session, host, err)
+			signedcert, signedkey, err := key.CertificateForKey(host, p.PrivateKey, p.Cert)
+			if err != nil {
+				zap.S().Errorf("[%v][tls] fail to generate a key for: %v, reason: %v", ctx.session, host, err)
+				http.Error(w, "", http.StatusInternalServerError)
+				return
+			}
+
+			p.certCache.SetKeyPair(host, signedcert.DerBytes, signedkey.PEMEncoded())
+			*keypair, err = tls.X509KeyPair(signedcert.PEMEncoded(), signedkey.PEMEncoded())
+
+			if err != nil {
+				zap.S().Errorf("[%v][tls] fail to generate a keypair for: %v", ctx.session, host)
+				http.Error(w, "", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		newTlsConfig := &tls.Config{
 			CipherSuites:             p.TlsConfig.CipherSuites,
 			PreferServerCipherSuites: p.TlsConfig.PreferServerCipherSuites,
 			InsecureSkipVerify:       p.TlsConfig.InsecureSkipVerify,
-			Certificates:             []tls.Certificate{keypair},
+			Certificates:             []tls.Certificate{*keypair},
 		}
 		tlsConnFromClient := tls.Server(connFromClient, newTlsConfig)
 		httpsListener := &HttpsListener{conn: tlsConnFromClient}

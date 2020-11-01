@@ -26,8 +26,8 @@ type PrivateKey struct {
 
 // Certificate is a convenience wrapper for x509.Certificate
 type Certificate struct {
-	cert     *x509.Certificate
-	derBytes []byte
+	Cert     *x509.Certificate
+	DerBytes []byte
 }
 
 // LoadPKFromFile loads private key from the specified file
@@ -65,7 +65,7 @@ func LoadCertificateFromFile(filename string) (*Certificate, error) {
 		return nil, fmt.Errorf("unable to decode x509 certificate")
 	}
 
-	return &Certificate{cert: cert}, nil
+	return &Certificate{Cert: cert}, nil
 }
 
 func CertificateForKey(CN string, key *PrivateKey, ca *Certificate) (*Certificate, *PrivateKey, error) {
@@ -77,7 +77,7 @@ func CertificateForKey(CN string, key *PrivateKey, ca *Certificate) (*Certificat
 			CommonName:   CN,
 		},
 		NotBefore:    time.Now(),
-		NotAfter:     time.Now().AddDate(10, 0, 0),
+		NotAfter:     time.Now().AddDate(1, 0, 0),
 		SubjectKeyId: []byte{1, 2, 3, 4, 6},
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -91,7 +91,7 @@ func CertificateForKey(CN string, key *PrivateKey, ca *Certificate) (*Certificat
 
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	// sign the cert with root CA
-	signedBytes, err := x509.CreateCertificate(rand.Reader, template, ca.cert, priv.Public(), key.rsaKey)
+	signedBytes, err := x509.CreateCertificate(rand.Reader, template, ca.Cert, priv.Public(), key.rsaKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -101,7 +101,7 @@ func CertificateForKey(CN string, key *PrivateKey, ca *Certificate) (*Certificat
 		return nil, nil, err
 	}
 
-	return &Certificate{cert: signedCert, derBytes: signedBytes}, &PrivateKey{rsaKey: priv}, nil
+	return &Certificate{Cert: signedCert, DerBytes: signedBytes}, &PrivateKey{rsaKey: priv}, nil
 }
 
 func (k *PrivateKey) pemBlock() *pem.Block {
@@ -113,7 +113,7 @@ func (k *PrivateKey) PEMEncoded() (pemBytes []byte) {
 }
 
 func (c *Certificate) pemBlock() *pem.Block {
-	return &pem.Block{Type: PEM_HEADER_CERTIFICATE, Bytes: c.derBytes}
+	return &pem.Block{Type: PEM_HEADER_CERTIFICATE, Bytes: c.DerBytes}
 }
 
 func (c *Certificate) PEMEncoded() (pemBytes []byte) {
