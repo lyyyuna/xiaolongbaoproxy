@@ -234,6 +234,8 @@ func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.Respo
 	}
 	defer connRemote.Close()
 
+	// remove some headers
+	p.removeHeaders(r)
 	if err = r.Write(connRemote); err != nil {
 		zap.S().Errorf("[%v][tls] fail to send request to : %v, reason: %v", ctx.session, host, err)
 		http.Error(w, "", http.StatusInternalServerError)
@@ -252,6 +254,8 @@ func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.Respo
 			w.Header().Set(k, v)
 		}
 	}
+	// Force connection close otherwise chrome will keep CONNECT tunnel open forever
+	respRemote.Header.Set("Connection", "close")
 	w.WriteHeader(respRemote.StatusCode)
 	nb, err := io.Copy(w, respRemote.Body)
 	if err != nil {
@@ -272,4 +276,31 @@ func copyWithWait(ctx *ProxyCtx, dst, src *net.TCPConn, wg *sync.WaitGroup) {
 	dst.CloseWrite()
 	src.CloseRead()
 	wg.Done()
+}
+
+func (p *ProxyServer) removeHeaders(r *http.Request) {
+	r.RequestURI = ""
+	r.Header.Del("Accept-Encoding")
+	// curl can add that, see
+	// https://jdebp.eu./FGA/web-proxy-connection-header.html
+	r.Header.Del("Proxy-Connection")
+	r.Header.Del("Proxy-Authenticate")
+	r.Header.Del("Proxy-Authorization")
+	// Connection, Authenticate and Authorization are single hop Header:
+	// http://www.w3.org/Protocols/rfc2616/rfc2616.txt
+	// 14.10 Connection
+	//   The Connection general-header field allows the sender to specify
+	//   options that are desired for that particular connection and MUST NOT
+	//   be communicated by proxies over further connections.
+
+	// When server reads http request it sets req.Close to true if
+	// "Connection" header contains "close".
+	// https://github.com/golang/go/blob/master/src/net/http/request.go#L1080
+	// Later, transfer.go adds "Connection: close" back when req.Close is true
+	// https://github.com/golang/go/blob/master/src/net/http/transfer.go#L275
+	// That's why tests that checks "Connection: close" removal fail
+	if r.Header.Get("Connection") == "close" {
+		r.Close = false
+	}
+	r.Header.Del("Connection")
 }
