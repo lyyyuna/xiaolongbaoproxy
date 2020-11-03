@@ -77,7 +77,7 @@ func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*Pr
 
 func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := NewProxyCtx()
-	zap.S().Debugf("[%v] got request: %v, %v", ctx.session, r.Method, r.URL)
+	zap.S().Infof("[%v] got request: %v, %v, from %v", ctx.session, r.Method, r.URL, r.RemoteAddr)
 	if r.Method == "CONNECT" {
 		p.TransferHttps(ctx, w, r)
 	} else {
@@ -111,7 +111,7 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 		http.Error(w, "", res.StatusCode)
 		return
 	}
-	zap.S().Infof("[%v] transfer %v bytes", ctx.session, nb)
+	zap.S().Debugf("[%v] transfer %v bytes", ctx.session, nb)
 	ctx.TransferBytes = nb
 }
 
@@ -211,7 +211,9 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 
 		connFromClient.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
-		http.Serve(httpsListener, httpsHandler)
+		singleServ := p.newSingleUseTlsServer()
+		singleServ.Handler = httpsHandler
+		singleServ.Serve(httpsListener)
 	}
 }
 
@@ -264,7 +266,7 @@ func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.Respo
 		return
 	}
 	// defer respRemote.Body.Close() should NOT close, or tls connection will break
-	zap.S().Infof("[%v][tls] transfer %v bytes", ctx.session, nb)
+	zap.S().Debugf("[%v][tls] transfer %v bytes", ctx.session, nb)
 	ctx.TransferBytes = nb
 }
 
@@ -303,4 +305,13 @@ func (p *ProxyServer) removeHeaders(r *http.Request) {
 		r.Close = false
 	}
 	r.Header.Del("Connection")
+}
+
+func (p *ProxyServer) newSingleUseTlsServer() *http.Server {
+	return &http.Server{
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       10 * time.Second,
+	}
 }
