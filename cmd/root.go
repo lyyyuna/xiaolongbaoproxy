@@ -29,4 +29,5 @@ func init() {
 	rootCmd.AddCommand(basicCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(mitmCmd)
+	rootCmd.AddCommand(mitmRecordCmd)
 }

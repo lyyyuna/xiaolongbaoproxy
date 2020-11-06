@@ -14,7 +14,8 @@ type ProxyCtx struct {
 }
 
 type ProxyRequest struct {
-	Uri     string
+	Host    string
+	Url     string
 	Headers map[string][]string
 	Tls     bool
 }
@@ -26,6 +27,8 @@ type ProxyResponse struct {
 
 func NewProxyCtx() *ProxyCtx {
 	return &ProxyCtx{
-		Session: atomic.AddInt64(&g_sess, 1),
+		Session:  atomic.AddInt64(&g_sess, 1),
+		Request:  &ProxyRequest{},
+		Response: &ProxyResponse{},
 	}
 }

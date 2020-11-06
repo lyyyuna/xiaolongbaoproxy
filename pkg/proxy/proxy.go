@@ -20,7 +20,7 @@ import (
 type ProxyServer struct {
 	Mitm       bool
 	Tr         *http.Transport
-	Hook       func(*ProxyCtx, *http.Request)
+	Hook       func(*ProxyCtx)
 	Cert       *key.Certificate
 	PrivateKey *key.PrivateKey
 	TlsConfig  *tls.Config
@@ -29,7 +29,7 @@ type ProxyServer struct {
 
 var hasPort = regexp.MustCompile(`:\d+$`)
 
-func NewProxyServer(hook func(*ProxyCtx, *http.Request)) *ProxyServer {
+func NewProxyServer(hook func(*ProxyCtx)) *ProxyServer {
 	return &ProxyServer{
 		Mitm: false,
 		Tr:   &http.Transport{},
@@ -37,7 +37,7 @@ func NewProxyServer(hook func(*ProxyCtx, *http.Request)) *ProxyServer {
 	}
 }
 
-func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*ProxyCtx, *http.Request)) *ProxyServer {
+func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*ProxyCtx)) *ProxyServer {
 	cert, err := key.LoadCertificateFromFile(certpath)
 	if err != nil {
 		zap.S().Fatalf("read cert failed: %v", err)
@@ -88,11 +88,12 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if p.Hook != nil {
-			p.Hook(ctx, r)
+			p.Hook(ctx)
 		}
 	}()
 
-	ctx.Request.Uri = r.URL.String()
+	ctx.Request.Host = r.Host
+	ctx.Request.Url = r.URL.String()
 	ctx.Request.Headers = r.Header
 
 	res, err := p.Tr.RoundTrip(r)
@@ -228,11 +229,12 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if p.Hook != nil {
-			p.Hook(ctx, r)
+			p.Hook(ctx)
 		}
 	}()
 
-	ctx.Request.Uri = r.URL.String()
+	ctx.Request.Host = r.Host
+	ctx.Request.Url = r.URL.String()
 	ctx.Request.Headers = r.Header
 
 	host := r.Host
