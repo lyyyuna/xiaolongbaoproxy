@@ -77,7 +77,7 @@ func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*Pr
 
 func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := NewProxyCtx()
-	zap.S().Infof("[%v] got request: %v, %v, from %v", ctx.session, r.Method, r.URL, r.RemoteAddr)
+	zap.S().Infof("[%v] got request: %v, %v, from %v", ctx.Session, r.Method, r.URL, r.RemoteAddr)
 	if r.Method == "CONNECT" {
 		p.TransferHttps(ctx, w, r)
 	} else {
@@ -92,9 +92,12 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 		}
 	}()
 
+	ctx.Request.Uri = r.URL.String()
+	ctx.Request.Headers = r.Header
+
 	res, err := p.Tr.RoundTrip(r)
 	if err != nil {
-		zap.S().Errorf("[%v] response from %v error", ctx.session, r.URL)
+		zap.S().Errorf("[%v] response from %v error", ctx.Session, r.URL)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
@@ -107,12 +110,15 @@ func (p *ProxyServer) TransferPlainText(ctx *ProxyCtx, w http.ResponseWriter, r 
 	w.WriteHeader(res.StatusCode)
 	nb, err := io.Copy(w, res.Body)
 	if err != nil {
-		zap.S().Errorf("[%v] send response back to client failed: %v", ctx.session, err)
+		zap.S().Errorf("[%v] send response back to client failed: %v", ctx.Session, err)
 		http.Error(w, "", res.StatusCode)
 		return
 	}
-	zap.S().Debugf("[%v] transfer %v bytes", ctx.session, nb)
+
+	zap.S().Debugf("[%v] transfer %v bytes", ctx.Session, nb)
 	ctx.TransferBytes = nb
+	ctx.Response.Headers = res.Header
+	ctx.Response.StatusCode = res.StatusCode
 }
 
 func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *http.Request) {
@@ -122,16 +128,18 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 	// 	}
 	// }()
 
+	ctx.Request.Tls = true
+
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		zap.S().Errorf("[%v] the http server does not support hijacker", ctx.session)
+		zap.S().Errorf("[%v] the http server does not support hijacker", ctx.Session)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
 
 	connFromClient, _, err := hj.Hijack()
 	if err != nil {
-		zap.S().Errorf("[%v] fail to hijack the connection: %v", ctx.session, err)
+		zap.S().Errorf("[%v] fail to hijack the connection: %v", ctx.Session, err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
@@ -150,7 +158,7 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		}
 		connToRemote, err := net.DialTimeout("tcp", host, 5*time.Second)
 		if err != nil {
-			zap.S().Errorf("[%v] fail to connect to remote: %v", ctx.session, err)
+			zap.S().Errorf("[%v] fail to connect to remote: %v", ctx.Session, err)
 			io.WriteString(w, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
 			// connToRemote.Close()
 			return
@@ -176,13 +184,13 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 			keypair = &tls.Certificate{}
 		}
 		if err == nil && keypair != nil {
-			zap.S().Debugf("[%v][tls] found one key pair in cache for: %v", ctx.session, host)
+			zap.S().Debugf("[%v][tls] found one key pair in cache for: %v", ctx.Session, host)
 		}
 		if err != nil {
-			zap.S().Infof("[%v][tls] key not found for %v: %v", ctx.session, host, err)
+			zap.S().Infof("[%v][tls] key not found for %v: %v", ctx.Session, host, err)
 			signedcert, signedkey, err := key.CertificateForKey(host, p.PrivateKey, p.Cert)
 			if err != nil {
-				zap.S().Errorf("[%v][tls] fail to generate a key for: %v, reason: %v", ctx.session, host, err)
+				zap.S().Errorf("[%v][tls] fail to generate a key for: %v, reason: %v", ctx.Session, host, err)
 				http.Error(w, "", http.StatusInternalServerError)
 				return
 			}
@@ -191,7 +199,7 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 			*keypair, err = tls.X509KeyPair(signedcert.PEMEncoded(), signedkey.PEMEncoded())
 
 			if err != nil {
-				zap.S().Errorf("[%v][tls] fail to generate a keypair for: %v", ctx.session, host)
+				zap.S().Errorf("[%v][tls] fail to generate a keypair for: %v", ctx.Session, host)
 				http.Error(w, "", http.StatusInternalServerError)
 				return
 			}
@@ -224,13 +232,16 @@ func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.Respo
 		}
 	}()
 
+	ctx.Request.Uri = r.URL.String()
+	ctx.Request.Headers = r.Header
+
 	host := r.Host
 	if !hasPort.MatchString(host) {
 		host += ":443"
 	}
 	connRemote, err := tls.Dial("tcp", host, p.TlsConfig)
 	if err != nil {
-		zap.S().Errorf("[%v][tls] fail to dial to : %v, reason: %v", ctx.session, host, err)
+		zap.S().Errorf("[%v][tls] fail to dial to : %v, reason: %v", ctx.Session, host, err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
@@ -239,14 +250,14 @@ func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.Respo
 	// remove some headers
 	p.removeHeaders(r)
 	if err = r.Write(connRemote); err != nil {
-		zap.S().Errorf("[%v][tls] fail to send request to : %v, reason: %v", ctx.session, host, err)
+		zap.S().Errorf("[%v][tls] fail to send request to : %v, reason: %v", ctx.Session, host, err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
 
 	respRemote, err := http.ReadResponse(bufio.NewReader(connRemote), r)
 	if err != nil && err != io.EOF {
-		zap.S().Errorf("[%v][tls] fail to read response from : %v, reason: %v", ctx.session, host, err)
+		zap.S().Errorf("[%v][tls] fail to read response from : %v, reason: %v", ctx.Session, host, err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
@@ -261,19 +272,21 @@ func (p *ProxyServer) TransferPlainTextToHttpsRemote(ctx *ProxyCtx, w http.Respo
 	w.WriteHeader(respRemote.StatusCode)
 	nb, err := io.Copy(w, respRemote.Body)
 	if err != nil {
-		zap.S().Errorf("[%v][tls] send response back to client failed: %v", ctx.session, err)
+		zap.S().Errorf("[%v][tls] send response back to client failed: %v", ctx.Session, err)
 		http.Error(w, "", respRemote.StatusCode)
 		return
 	}
 	// defer respRemote.Body.Close() should NOT close, or tls connection will break
-	zap.S().Debugf("[%v][tls] transfer %v bytes", ctx.session, nb)
+	zap.S().Debugf("[%v][tls] transfer %v bytes", ctx.Session, nb)
 	ctx.TransferBytes = nb
+	ctx.Response.Headers = respRemote.Header
+	ctx.Response.StatusCode = respRemote.StatusCode
 }
 
 func copyWithWait(ctx *ProxyCtx, dst, src *net.TCPConn, wg *sync.WaitGroup) {
 	nb, err := io.Copy(dst, src)
 	if err != nil && nb == 0 {
-		zap.S().Errorf("[%v] transfer encountering error: %v", ctx.session, err)
+		zap.S().Errorf("[%v] transfer encountering error: %v", ctx.Session, err)
 	}
 	dst.CloseWrite()
 	src.CloseRead()
