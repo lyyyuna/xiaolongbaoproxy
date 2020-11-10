@@ -18,13 +18,14 @@ import (
 )
 
 type ProxyServer struct {
-	Mitm       bool
-	Tr         *http.Transport
-	Hook       func(*ProxyCtx)
-	Cert       *key.Certificate
-	PrivateKey *key.PrivateKey
-	TlsConfig  *tls.Config
-	certCache  *keycache.CertCache
+	Mitm           bool
+	Tr             *http.Transport
+	Hook           func(*ProxyCtx)
+	Cert           *key.Certificate
+	PrivateKey     *key.PrivateKey
+	TlsConfig      *tls.Config
+	certCache      *keycache.CertCache
+	fakeServerPool *sync.Pool
 }
 
 var hasPort = regexp.MustCompile(`:\d+$`)
@@ -50,6 +51,7 @@ func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*Pr
 	if err != nil {
 		zap.S().Fatalf("initalize cert cache failed: %v", err)
 	}
+
 	return &ProxyServer{
 		Mitm:       true,
 		Tr:         &http.Transport{},
@@ -72,6 +74,11 @@ func NewMitmProxyServer(certpath, pkpath string, cachepath string, hook func(*Pr
 			PreferServerCipherSuites: true,
 			InsecureSkipVerify:       false},
 		certCache: cache,
+		fakeServerPool: &sync.Pool{
+			New: func() interface{} {
+				return new(http.Server)
+			},
+		},
 	}
 }
 
@@ -221,6 +228,7 @@ func (p *ProxyServer) TransferHttps(ctx *ProxyCtx, w http.ResponseWriter, r *htt
 		connFromClient.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
 		singleServ := p.newSingleUseTlsServer()
+		defer p.fakeServerPool.Put(singleServ)
 		singleServ.Handler = httpsHandler
 		singleServ.Serve(httpsListener)
 	}
@@ -323,10 +331,10 @@ func (p *ProxyServer) removeHeaders(r *http.Request) {
 }
 
 func (p *ProxyServer) newSingleUseTlsServer() *http.Server {
-	return &http.Server{
-		ReadTimeout:       10 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       10 * time.Second,
-	}
+	fake := p.fakeServerPool.Get().(*http.Server)
+	fake.ReadTimeout = 10 * time.Second
+	fake.ReadHeaderTimeout = 5 * time.Second
+	fake.WriteTimeout = 10 * time.Second
+	fake.IdleTimeout = 10 * time.Second
+	return fake
 }
